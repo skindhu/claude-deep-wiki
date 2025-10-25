@@ -5,6 +5,10 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+## 若希望了解更多AI探索相关的内容，可关注作者公众号
+
+<img src="https://wechat-account-1251781786.cos.ap-guangzhou.myqcloud.com/wechat_account.jpeg" width="30%">
+
 ## 📖 项目背景
 
 在 AI 辅助编程时代，**需求质量**成为影响开发效率的关键因素。要让 AI 准确理解需求，首先需要让它掌握项目的背景知识。然而：
@@ -222,10 +226,6 @@ claude-deep-wiki/
 ## 📄 License
 
 [MIT License](LICENSE)
-
-## 若希望了解更多AI探索相关的内容，可关注作者公众号
-
-<img src="https://wechat-account-1251781786.cos.ap-guangzhou.myqcloud.com/wechat_account.jpeg" width="30%">
 
 ---
 
