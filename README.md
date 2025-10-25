@@ -223,11 +223,9 @@ claude-deep-wiki/
 
 [MIT License](LICENSE)
 
-## 🙏 致谢
+## 若希望了解更多AI探索相关的内容，可关注作者公众号
 
-- [Anthropic](https://www.anthropic.com/) - Claude Agent SDK
-- [Tree-sitter](https://tree-sitter.github.io/) - 强大的多语言解析器
-- 社区贡献者
+<img src="https://wechat-account-1251781786.cos.ap-guangzhou.myqcloud.com/wechat_account.jpeg" width="30%">
 
 ---
 
