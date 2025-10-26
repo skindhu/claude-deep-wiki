@@ -531,15 +531,29 @@ class DebugHelper:
         import re
         safe_module_name = re.sub(r'[^\w\-]', '_', module_name)
 
+        # 确保目录存在
+        batch_dir.mkdir(parents=True, exist_ok=True)
+
         # 保存原始响应（文件名包含模块名）
         raw_file = batch_dir / f"{safe_module_name}_batch_{batch_idx:02d}_raw.txt"
-        with open(raw_file, 'w', encoding='utf-8') as f:
-            f.write(response_text)
+        try:
+            with open(raw_file, 'w', encoding='utf-8') as f:
+                f.write(response_text)
+        except Exception as e:
+            self._log(f"  ⚠️  批次{batch_idx} 原始响应保存失败: {e}")
 
         # 保存提取的结果（文件名包含模块名）
         result_file = batch_dir / f"{safe_module_name}_batch_{batch_idx:02d}_result.json"
-        with open(result_file, 'w', encoding='utf-8') as f:
-            json.dump(batch_result, f, ensure_ascii=False, indent=2)
+        try:
+            # 先序列化为字符串，确认数据可序列化
+            json_str = json.dumps(batch_result, ensure_ascii=False, indent=2)
+            # 再写入文件
+            with open(result_file, 'w', encoding='utf-8') as f:
+                f.write(json_str)
+        except (TypeError, ValueError, IOError, OSError) as e:
+            # 如果序列化或写入失败，打印精简日志
+            files_count = len(batch_result.get('files_analysis', [])) if isinstance(batch_result, dict) else 'N/A'
+            print(f"  ⚠️  批次{batch_idx} JSON保存失败: {type(e).__name__}: {e} (files: {files_count})")
 
         self._log(f"  💾 批次{batch_idx}结果已保存")
 
