@@ -25,6 +25,7 @@ from mcp_servers.code_analysis_server import create_code_analysis_mcp_server
 from config import ANTHROPIC_AUTH_TOKEN, MAX_TURNS
 from utils.structure_prompt_builder import StructurePromptBuilder
 from utils.json_extractor import JSONExtractor
+from utils.claude_query_helper import ClaudeQueryHelper
 
 logger = None  # 简化日志
 
@@ -169,24 +170,17 @@ class StructureScannerAgent:
 
         # Phase 1 使用独立session
         # 原因：下一阶段会通过结构化数据传递输出，不需要对话历史
-        await self.client.query(prompt, session_id="structure_scan_phase1")
 
-        # 接收响应
-        response_text = ""
-        async for message in self.client.receive_response():
-            if hasattr(message, 'content'):
-                for block in message.content:
-                    if hasattr(block, 'text'):
-                        response_text += block.text
+        # 使用带重试的查询，验证返回的JSON包含modules字段
+        response_text, overview = await ClaudeQueryHelper.query_with_json_retry(
+            client=self.client,
+            prompt=prompt,
+            session_id="structure_scan_phase1",
+            max_attempts=3,
+            validator=lambda r: r and r.get('modules')
+        )
 
         self.last_response = response_text
-
-        # 提取 JSON
-        overview = JSONExtractor.extract(response_text)
-
-        if not overview or not overview.get('modules'):
-            raise ValueError("阶段1失败: 未返回有效的模块结构数据")
-
         return overview
 
     async def _analyze_file_dependencies(
@@ -235,24 +229,17 @@ class StructureScannerAgent:
 
         # Phase 2 使用独立session，避免Phase 1对话历史的冗余
         # 必要的信息已通过 all_key_files 参数显式传递
-        await self.client.query(prompt, session_id="structure_scan_phase2")
 
-        # 接收响应
-        response_text = ""
-        async for message in self.client.receive_response():
-            if hasattr(message, 'content'):
-                for block in message.content:
-                    if hasattr(block, 'text'):
-                        response_text += block.text
+        # 使用带重试的查询，验证返回的JSON包含file_dependencies字段
+        response_text, dependencies = await ClaudeQueryHelper.query_with_json_retry(
+            client=self.client,
+            prompt=prompt,
+            session_id="structure_scan_phase2",
+            max_attempts=3,
+            validator=lambda r: r and r.get('file_dependencies')
+        )
 
         self.last_response = response_text
-
-        # 提取 JSON
-        dependencies = JSONExtractor.extract(response_text)
-
-        if not dependencies or not dependencies.get('file_dependencies'):
-            raise ValueError("阶段2失败: 未返回有效的文件依赖数据")
-
         return dependencies
 
     async def _finalize_structure(
@@ -284,24 +271,17 @@ class StructureScannerAgent:
 
         # Phase 3 使用独立session，避免前两阶段对话历史的冗余
         # Phase 1和2的输出已通过 structure_overview 和 dependencies 参数显式传递
-        await self.client.query(prompt, session_id="structure_scan_phase3")
 
-        # 接收响应
-        response_text = ""
-        async for message in self.client.receive_response():
-            if hasattr(message, 'content'):
-                for block in message.content:
-                    if hasattr(block, 'text'):
-                        response_text += block.text
+        # 使用带重试的查询，验证返回的JSON包含module_hierarchy字段
+        response_text, final_structure = await ClaudeQueryHelper.query_with_json_retry(
+            client=self.client,
+            prompt=prompt,
+            session_id="structure_scan_phase3",
+            max_attempts=3,
+            validator=lambda r: r and r.get('module_hierarchy')
+        )
 
         self.last_response = response_text
-
-        # 提取 JSON
-        final_structure = JSONExtractor.extract(response_text)
-
-        if not final_structure or not final_structure.get('module_hierarchy'):
-            raise ValueError("阶段3失败: 未返回有效的最终结构数据")
-
         return final_structure
 
     async def disconnect(self):

@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from utils.prd_prompt_builder import PRDPromptBuilder
 from utils.json_extractor import JSONExtractor
 from utils.debug_helper import DebugHelper
+from utils.claude_query_helper import ClaudeQueryHelper
 from config import ANTHROPIC_AUTH_TOKEN, MAX_TURNS, OUTPUT_DIR
 
 
@@ -185,25 +186,38 @@ class DocGeneratorAgent:
         # 调用 Claude API
         try:
             # 使用独立的 session_id 避免上下文累积
-            await self.client.query(prompt, session_id="doc_gen_grouping")
+            # 使用带重试的查询，验证返回的JSON包含product_domains字段且所有模块都被分配
+            def validate_complete_grouping(r):
+                if not r or not r.get('product_domains'):
+                    return False
+                # 检查是否所有模块都被分配
+                product_domains = r.get('product_domains', [])
+                assigned_modules = set()
+                for domain in product_domains:
+                    for module_name in domain.get('technical_modules', []):
+                        assigned_modules.add(module_name)
+                    # 也要检查子域中的模块
+                    for sub_domain in domain.get('sub_domains', []):
+                        for module_name in sub_domain.get('technical_modules', []):
+                            assigned_modules.add(module_name)
 
-            # 接收响应
-            response_text = ""
-            async for message in self.client.receive_response():
-                if hasattr(message, 'content'):
-                    for block in message.content:
-                        if hasattr(block, 'text'):
-                            response_text += block.text
+                all_module_names = set(modules_analysis.keys())
+                unassigned = all_module_names - assigned_modules
 
-            # 解析 JSON 结果
-            grouping_data = JSONExtractor.extract(response_text)
-            if not grouping_data:
-                return None
+                if unassigned:
+                    print(f"          ⚠️  有 {len(unassigned)} 个模块未被分配: {', '.join(list(unassigned)[:5])}{'...' if len(unassigned) > 5 else ''}")
+                    return False
+                return True
+
+            response_text, grouping_data = await ClaudeQueryHelper.query_with_json_retry(
+                client=self.client,
+                prompt=prompt,
+                session_id="doc_gen_grouping",
+                max_attempts=3,
+                validator=validate_complete_grouping
+            )
 
             product_domains = grouping_data.get('product_domains', [])
-
-            # 验证分组结果
-            self._validate_grouping(product_domains, modules_analysis)
 
             # 构建映射关系
             module_to_domain_mapping = {}
@@ -225,37 +239,6 @@ class DocGeneratorAgent:
             print(f"  ❌ 智能分组失败: {str(e)}")
             return None
 
-    def _validate_grouping(
-        self,
-        product_domains: List[Dict[str, Any]],
-        modules_analysis: Dict[str, Any]
-    ) -> bool:
-        """
-        验证分组结果
-
-        Args:
-            product_domains: 产品功能域列表
-            modules_analysis: 模块分析结果
-
-        Returns:
-            是否验证通过
-        """
-        all_module_names = set(modules_analysis.keys())
-        assigned_modules = set()
-        module_domain_count = {}  # 统计每个模块被分配到多少个功能域
-
-        for domain in product_domains:
-            for module_name in domain.get('technical_modules', []):
-                assigned_modules.add(module_name)
-                module_domain_count[module_name] = module_domain_count.get(module_name, 0) + 1
-
-        # 检查未分配的模块
-        unassigned = all_module_names - assigned_modules
-        if unassigned:
-            print(f"  ⚠️  以下模块未被分配: {', '.join(unassigned)}")
-            return False
-
-        return True
 
     async def _generate_domain_prd(
         self,
@@ -412,15 +395,11 @@ class DocGeneratorAgent:
         # 调用 Claude API
         try:
             # 使用独立的 session_id 避免上下文累积
-            await self.client.query(prompt, session_id="doc_gen_index")
-
-            # 接收响应
-            index_content = ""
-            async for message in self.client.receive_response():
-                if hasattr(message, 'content'):
-                    for block in message.content:
-                        if hasattr(block, 'text'):
-                            index_content += block.text
+            index_content = await ClaudeQueryHelper.query_with_text(
+                client=self.client,
+                prompt=prompt,
+                session_id="doc_gen_index"
+            )
 
             # 保存 Index.md 到 prd 目录
             index_file = os.path.join(self.prd_dir, "Index.md")
@@ -474,14 +453,12 @@ class DocGeneratorAgent:
         # 使用独立的 session_id 避免上下文累积（每个domain使用独立会话）
         domain_name = domain_info.get('domain_name', 'unknown')
         session_id = f"doc_gen_prd_{domain_name}"
-        await self.client.query(prompt, session_id=session_id)
 
-        prd_content = ""
-        async for message in self.client.receive_response():
-            if hasattr(message, 'content'):
-                for block in message.content:
-                    if hasattr(block, 'text'):
-                        prd_content += block.text
+        prd_content = await ClaudeQueryHelper.query_with_text(
+            client=self.client,
+            prompt=prompt,
+            session_id=session_id
+        )
 
         return prd_content
 
@@ -537,14 +514,12 @@ class DocGeneratorAgent:
                 # 同一domain的所有batch使用相同session_id，保持上下文连续性
                 # 这样后续batch可以参考第一批建立的框架和风格
                 session_id = f"doc_gen_prd_{domain_name}"
-                await self.client.query(prompt, session_id=session_id)
 
-                batch_content = ""
-                async for message in self.client.receive_response():
-                    if hasattr(message, 'content'):
-                        for block in message.content:
-                            if hasattr(block, 'text'):
-                                batch_content += block.text
+                batch_content = await ClaudeQueryHelper.query_with_text(
+                    client=self.client,
+                    prompt=prompt,
+                    session_id=session_id
+                )
 
                 batch_contents.append(batch_content)
 

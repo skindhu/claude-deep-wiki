@@ -27,6 +27,7 @@ from config import ANTHROPIC_AUTH_TOKEN, MAX_TURNS
 from utils.batch_analyzer import FileAnalysisBatchManager
 from utils.semantic_prompt_builder import SemanticPromptBuilder
 from utils.json_extractor import JSONExtractor
+from utils.claude_query_helper import ClaudeQueryHelper
 
 logger = None  # 简化日志
 
@@ -231,24 +232,17 @@ class SemanticAnalyzerAgent:
         # 每个模块使用独立session，但同一模块的overview和details共享session
         # 这样后续的详细分析可以基于overview建立的理解
         session_id = f"semantic_module_{module_name}"
-        await self.client.query(prompt, session_id=session_id)
 
-        # 接收响应
-        response_text = ""
-        async for message in self.client.receive_response():
-            if hasattr(message, 'content'):
-                for block in message.content:
-                    if hasattr(block, 'text'):
-                        response_text += block.text
+        # 使用带重试的查询，验证返回的JSON包含module_name字段
+        response_text, overview = await ClaudeQueryHelper.query_with_json_retry(
+            client=self.client,
+            prompt=prompt,
+            session_id=session_id,
+            max_attempts=3,
+            validator=lambda r: r and r.get('module_name')
+        )
 
         self.last_response = response_text
-
-        # 提取 JSON
-        overview = JSONExtractor.extract(response_text)
-
-        if not overview or not overview.get('module_name'):
-            raise ValueError("阶段1失败: 未返回有效的概览分析数据")
-
         return overview
 
     async def _detailed_analysis(
@@ -309,20 +303,17 @@ class SemanticAnalyzerAgent:
 
                 # 使用与overview相同的session_id，让AI利用已建立的模块理解
                 session_id = f"semantic_module_{module_name}"
-                await self.client.query(prompt, session_id=session_id)
 
-                # 接收响应
-                response_text = ""
-                async for message in self.client.receive_response():
-                    if hasattr(message, 'content'):
-                        for block in message.content:
-                            if hasattr(block, 'text'):
-                                response_text += block.text
+                # 使用带重试的查询，验证返回的JSON包含files_analysis字段
+                response_text, batch_result = await ClaudeQueryHelper.query_with_json_retry(
+                    client=self.client,
+                    prompt=prompt,
+                    session_id=session_id,
+                    max_attempts=3,
+                    validator=lambda r: r and r.get('files_analysis')
+                )
 
                 self.last_response = response_text
-
-                # 提取JSON
-                batch_result = JSONExtractor.extract(response_text)
 
                 # 保存批次原始响应和提取结果
                 self.debug_helper.save_batch_result(batch_dir, module_name, idx, response_text, batch_result, batch)
