@@ -60,6 +60,9 @@ ANTHROPIC_AUTH_TOKEN = os.environ.get("ANTHROPIC_AUTH_TOKEN")
 # 默认模型
 DEFAULT_MODEL = None  # None 表示使用 SDK 默认模型
 
+# 预定义模块配置文件路径（从环境变量读取）
+MODULE_FILE = os.environ.get("MODULE_FILE")
+
 
 # ============================================================================
 # 日志配置
@@ -73,6 +76,17 @@ VERBOSE = False
 
 # 是否启用调试模式
 DEBUG = False
+
+
+# ============================================================================
+# 模块过滤配置
+# ============================================================================
+
+# 排除的模块列表（黑名单模式，从环境变量读取）
+# 格式：逗号分隔的模块名，例如 "app_dnf,app_lostark,app_speed,app_aqtw,app_wuxia"
+EXCLUDE_MODULES = set(
+    filter(None, os.environ.get("EXCLUDE_MODULES", "").split(","))
+)
 
 
 # ============================================================================

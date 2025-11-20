@@ -21,6 +21,7 @@ matplotlib>=3.8.0                # Graph visualization
 rich>=13.7.0                     # Beautiful terminal output
 pydantic>=2.5.0                  # Data validation
 typing-extensions>=4.9.0         # Type hints support
+tiktoken>=0.5.0                  # Token counting for Claude/OpenAI models
 
 # Development Dependencies
 pytest>=7.4.3                    # Testing framework

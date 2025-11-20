@@ -5,11 +5,13 @@ MCP 代码分析工具集
 
 工具列表:
 1. scan_repository_structure - 扫描代码仓库结构
-2. extract_imports_and_exports - 提取文件的导入导出关系
-3. analyze_code_block - 深度分析代码片段
-4. build_dependency_graph - 构建模块依赖关系图
-5. search_code_patterns - 搜索特定代码模式
-6. validate_analysis_result - 验证分析结果准确性
+2. filter_files_by_patterns - 根据 glob 模式过滤文件
+3. validate_structure_completeness - 验证结构扫描结果的完整性
+4. extract_imports_and_exports - 提取文件的导入导出关系
+5. analyze_code_block - 深度分析代码片段
+6. build_dependency_graph - 构建模块依赖关系图
+7. search_code_patterns - 搜索特定代码模式
+8. validate_analysis_result - 验证分析结果准确性
 """
 
 import sys
@@ -29,6 +31,7 @@ from mcp_tools.file_filter import FileFilter
 from mcp_tools.polyglot_parser import get_polyglot_parser
 from mcp_tools.universal_extractor import create_extractor
 from mcp_tools.dependency_analyzer import create_dependency_analyzer
+from mcp_tools.dart_analyzer import extract_dart_imports
 
 logger = logging.getLogger(__name__)
 
@@ -39,16 +42,18 @@ logger = logging.getLogger(__name__)
 
 def scan_repository_structure(
     repo_path: str,
-    max_depth: int = 5,
+    max_depth: int = 50,
     include_extensions: Optional[List[str]] = None,
     exclude_patterns: Optional[List[str]] = None
 ) -> Dict[str, Any]:
     """
     扫描代码仓库结构,返回目录树和文件统计
 
+    注意：此工具只返回源码文件（source）和配置文件（config），自动过滤文档、图片等资源文件
+
     Args:
         repo_path: 仓库根目录路径
-        max_depth: 最大扫描深度 (默认 5)
+        max_depth: 最大扫描深度 (默认 50)
         include_extensions: 只包含的文件扩展名列表 (如 ['.py', '.js'])
         exclude_patterns: 额外排除的文件模式列表
 
@@ -57,11 +62,14 @@ def scan_repository_structure(
             "success": bool,
             "tree": "目录树字符串",
             "stats": {
-                "total_files": int,
+                "total_files": int,  # 过滤后的源码文件数（与files列表长度一致）
                 "by_language": {"python": 10, "javascript": 5, ...},
                 "by_category": {"source": 15, "config": 3, ...}
             },
-            "files": [{"path": str, "language": str, "size": int}, ...],
+            "files": [
+                {"path": str, "language": str, "category": str, "size": int},
+                ...
+            ],  # 只包含 category 为 'source' 的文件
             "error": str (如果失败)
         }
     """
@@ -87,7 +95,7 @@ def scan_repository_structure(
             include_extensions=ext_set
         ))
 
-        # 语言检测
+        # 语言检测（只保留源码和配置文件）
         detector = get_language_detector()
         file_infos = []
         language_counts = {}
@@ -96,6 +104,10 @@ def scan_repository_structure(
         for file_path in files:
             language = detector.detect_language(file_path)
             category = detector.get_language_category(language) if language else "unknown"
+
+            # 只保留源码文件和配置文件
+            if category not in ['source']:
+                continue
 
             file_infos.append({
                 "path": str(file_path.relative_to(repo_path)),
@@ -116,7 +128,7 @@ def scan_repository_structure(
             "success": True,
             "tree": tree,
             "stats": {
-                "total_files": len(files),
+                "total_files": len(file_infos),  # 过滤后的源码文件数（与files列表一致）
                 "by_language": language_counts,
                 "by_category": category_counts,
                 "total_size_bytes": sum(f["size"] for f in file_infos)
@@ -180,6 +192,11 @@ def extract_imports_and_exports(
                 "success": False,
                 "error": "Unable to detect language"
             }
+
+        # 特殊处理：Dart 语言使用专门的分析器
+        if language.lower() == 'dart':
+            result = extract_dart_imports(str(file_path), repo_root)
+            return result
 
         # 解析文件
         parser = get_polyglot_parser()
@@ -584,7 +601,7 @@ def _generate_tree_view(files: List[Path], root: Path) -> str:
 
 @tool(
     name="scan_repository_structure",
-    description="扫描代码仓库结构,返回目录树、文件统计和语言分布信息",
+    description="扫描代码仓库结构,返回目录树、文件统计和语言分布信息。注意：只返回源码文件，stats.total_files是过滤后的源码文件数（与files列表长度一致）",
     input_schema={
         "type": "object",
         "properties": {
@@ -625,6 +642,266 @@ async def scan_repo_tool(args: Dict[str, Any]) -> Dict[str, Any]:
         "content": [{
             "type": "text",
             "text": json.dumps(result, ensure_ascii=False, indent=2)
+        }]
+    }
+
+
+def filter_files_by_patterns(
+    repo_path: str,
+    patterns: List[str],
+    max_depth: int = 50
+) -> Dict[str, Any]:
+    """
+    根据 glob 通配符模式过滤文件
+
+    Args:
+        repo_path: 仓库根目录路径
+        patterns: glob 通配符模式列表（如 ["app_cf/**/*.dart", "lib/user/**/*"]）
+        max_depth: 最大扫描深度
+
+    Returns:
+        {
+            "success": bool,
+            "matched_files": [文件路径列表],
+            "total_matched": int,
+            "patterns_used": [patterns],
+            "error": str (如果失败)
+        }
+    """
+    try:
+        from fnmatch import fnmatch
+
+        # 先扫描仓库获取所有文件
+        scan_result = scan_repository_structure(repo_path, max_depth=max_depth)
+        if not scan_result.get('success'):
+            return {
+                "success": False,
+                "error": f"Failed to scan repository: {scan_result.get('error', 'Unknown error')}"
+            }
+
+        all_files = scan_result.get('files', [])
+
+        # 根据 patterns 过滤文件
+        matched_files = []
+        for file_info in all_files:
+            file_path = file_info['path']
+            for pattern in patterns:
+                if fnmatch(file_path, pattern):
+                    matched_files.append(file_path)
+                    break
+
+        return {
+            "success": True,
+            "matched_files": matched_files,
+            "total_matched": len(matched_files),
+            "patterns_used": patterns
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+@tool(
+    name="filter_files_by_patterns",
+    description="根据 glob 通配符模式过滤文件，返回匹配的文件列表。用于按模式查询模块的文件，避免在 prompt 中传递大量文件列表。",
+    input_schema={
+        "type": "object",
+        "properties": {
+            "repo_path": {
+                "type": "string",
+                "description": "仓库根目录的绝对路径"
+            },
+            "patterns": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "glob 通配符模式列表，如 [\"app_cf/**/*.dart\", \"lib/user/**/*\"]。使用 ** 匹配任意层级目录，* 匹配任意字符"
+            },
+            "max_depth": {
+                "type": "integer",
+                "description": "最大扫描深度，默认50层",
+                "default": 50
+            }
+        },
+        "required": ["repo_path", "patterns"]
+    }
+)
+async def filter_files_tool(args: Dict[str, Any]) -> Dict[str, Any]:
+    """异步包装器：根据 patterns 过滤文件"""
+    result = filter_files_by_patterns(
+        repo_path=args["repo_path"],
+        patterns=args["patterns"],
+        max_depth=args.get("max_depth", 50)
+    )
+
+    # 转换为 MCP 格式
+    return {
+        "content": [{
+            "type": "text",
+            "text": json.dumps(result, ensure_ascii=False, indent=2)
+        }]
+    }
+
+
+@tool(
+    name="validate_structure_completeness",
+    description="验证结构扫描结果的完整性，检查所有文件是否都被正确分配到模块中。Claude 应该在生成 structure_overview JSON 后调用此工具进行自我验证。",
+    input_schema={
+        "type": "object",
+        "properties": {
+            "repo_path": {
+                "type": "string",
+                "description": "仓库根目录的绝对路径"
+            },
+            "structure_overview": {
+                "type": "object",
+                "description": "已生成的结构概览 JSON 对象",
+                "properties": {
+                    "project_info": {"type": "object"},
+                    "modules": {"type": "array"}
+                },
+                "required": ["modules"]
+            }
+        },
+        "required": ["repo_path", "structure_overview"]
+    }
+)
+async def validate_structure_tool(args: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    验证结构完整性的 MCP 工具
+
+    供 Claude 在生成结构后主动调用，验证文件覆盖率和完整性
+    """
+    repo_path = args["repo_path"]
+    structure_overview = args["structure_overview"]
+
+    # 获取扫描结果
+    scan_result = scan_repository_structure(repo_path)
+
+    if not scan_result.get('success'):
+        return {
+            "content": [{
+                "type": "text",
+                "text": json.dumps({
+                    "valid": False,
+                    "error": scan_result.get('error', 'Unknown error')
+                }, ensure_ascii=False, indent=2)
+            }]
+        }
+
+    # 路径规范化函数
+    def normalize_path(path: str) -> str:
+        if not path:
+            return ""
+        path = path.lstrip('./')
+        path = path.replace('\\', '/')
+        path = path.rstrip('/')
+        return path
+
+    # 收集扫描到的所有文件
+    scanned_files = {
+        normalize_path(f['path'])
+        for f in scan_result.get('files', [])
+    }
+    total_scanned = len(scanned_files)
+
+    # 收集模块中的所有文件
+    module_files = set()
+    all_assignments = []
+    shared_files = {}
+    missing_all_files = []
+
+    modules = structure_overview.get('modules', [])
+    for module in modules:
+        module_name = module.get('name', 'Unknown')
+
+        # 检查一级模块
+        if 'all_files' not in module:
+            missing_all_files.append(module_name)
+        else:
+            all_files = module.get('all_files', [])
+            for file_path in all_files:
+                if file_path:
+                    normalized = normalize_path(file_path)
+                    all_assignments.append(normalized)
+
+                    if normalized in module_files:
+                        if normalized not in shared_files:
+                            shared_files[normalized] = []
+                        shared_files[normalized].append(f"{module_name}(父)")
+
+                    module_files.add(normalized)
+
+        # 检查子模块
+        sub_modules = module.get('sub_modules', [])
+        for sub_module in sub_modules:
+            sub_name = sub_module.get('name', 'Unknown')
+
+            if 'all_files' not in sub_module:
+                missing_all_files.append(f"{module_name}.{sub_name}")
+            else:
+                sub_files = sub_module.get('all_files', [])
+                for file_path in sub_files:
+                    if file_path:
+                        normalized = normalize_path(file_path)
+                        all_assignments.append(normalized)
+
+                        if normalized in module_files:
+                            if normalized not in shared_files:
+                                shared_files[normalized] = []
+                            shared_files[normalized].append(f"{module_name}.{sub_name}")
+
+                        module_files.add(normalized)
+
+    # 计算统计数据
+    unique_files = len(module_files)
+    total_assignments = len(all_assignments)
+    orphan_files = scanned_files - module_files
+    coverage_rate = unique_files / total_scanned if total_scanned > 0 else 0.0
+
+    # 构建验证报告
+    report = {
+        "valid": True,
+        "total_scanned": total_scanned,
+        "unique_files": unique_files,
+        "total_assignments": total_assignments,
+        "orphan_count": len(orphan_files),
+        "shared_count": len(shared_files),
+        "coverage_rate": coverage_rate,
+        "coverage_percentage": f"{coverage_rate * 100:.1f}%",
+        "missing_all_files": missing_all_files,
+        "orphan_files": list(orphan_files)[:20],  # 只返回前20个
+        "issues": [],
+        "recommendations": []
+    }
+
+    # 检查问题
+    if missing_all_files:
+        report["valid"] = False
+        report["issues"].append(f"有 {len(missing_all_files)} 个模块缺少 all_files 字段: {missing_all_files[:5]}")
+        report["recommendations"].append("为缺少 all_files 的模块添加该字段，即使为空数组")
+
+    if unique_files < total_scanned:
+        report["valid"] = False
+        report["issues"].append(f"文件覆盖不全: {unique_files}/{total_scanned} ({coverage_rate:.1%})")
+        report["recommendations"].append(f"有 {len(orphan_files)} 个文件未被分配，请将它们分配到合适的模块")
+
+    if shared_files:
+        report["info"] = f"发现 {len(shared_files)} 个跨模块共享文件，这是允许的"
+
+    # 如果完全覆盖
+    if unique_files >= total_scanned:
+        report["valid"] = True
+        report["message"] = f"✅ 验证通过！所有 {total_scanned} 个文件都已正确分配"
+        if unique_files > total_scanned:
+            report["info"] = f"有 {unique_files - total_scanned} 个文件在多个模块中共享"
+
+    return {
+        "content": [{
+            "type": "text",
+            "text": json.dumps(report, ensure_ascii=False, indent=2)
         }]
     }
 

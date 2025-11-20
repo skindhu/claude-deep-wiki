@@ -43,3 +43,4 @@ output/
 # Temporary files
 *.tmp
 .cache/
+.env

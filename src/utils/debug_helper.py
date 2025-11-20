@@ -36,32 +36,51 @@ class DebugHelper:
         保存分析阶段的数据
 
         Args:
-            stage: 阶段名称（如 "01_overview", "02_module_01"）
+            stage: 阶段名称（如 "01_overview", "planning/module_name_01_plan"）
+                   支持子目录，如 "planning/xxx" 会创建 planning 子目录
             raw_response: 原始响应文本
             extracted_data: 提取的结构化数据
         """
         if not self.enabled:
             return
 
-        # 清理 stage 名称，替换不安全的文件名字符
+        # 处理子目录
         import re
-        safe_stage = re.sub(r'[^\w\-]', '_', stage)
+        from pathlib import Path
+
+        if '/' in stage:
+            # 分离目录和文件名
+            parts = stage.split('/')
+            sub_dir = '/'.join(parts[:-1])
+            file_stage = parts[-1]
+
+            # 创建子目录
+            target_dir = self.debug_dir / sub_dir
+            target_dir.mkdir(parents=True, exist_ok=True)
+
+            # 清理文件名
+            safe_stage = re.sub(r'[^\w\-]', '_', file_stage)
+        else:
+            target_dir = self.debug_dir
+            safe_stage = re.sub(r'[^\w\-]', '_', stage)
 
         timestamp = self._get_timestamp()
 
-        # 保存原始响应
-        raw_file = self.debug_dir / f"{timestamp}_{safe_stage}_raw.txt"
-        with open(raw_file, 'w', encoding='utf-8') as f:
-            f.write(raw_response)
+        # 保存原始响应（如果有）
+        if raw_response:
+            raw_file = target_dir / f"{timestamp}_{safe_stage}_raw.txt"
+            with open(raw_file, 'w', encoding='utf-8') as f:
+                f.write(raw_response)
 
         # 保存提取的数据
-        extracted_file = self.debug_dir / f"{timestamp}_{safe_stage}_extracted.json"
+        extracted_file = target_dir / f"{timestamp}_{safe_stage}_extracted.json"
         with open(extracted_file, 'w', encoding='utf-8') as f:
             json.dump(extracted_data, f, ensure_ascii=False, indent=2)
 
-        self._log(f"  🐛 调试数据已保存: {safe_stage}")
-        self._log(f"     - 原始响应: {raw_file.name}")
-        self._log(f"     - 提取结果: {extracted_file.name}")
+        self._log(f"  🐛 调试数据已保存: {stage}")
+        if raw_response:
+            self._log(f"     - 原始响应: {raw_file.relative_to(self.debug_dir)}")
+        self._log(f"     - 提取结果: {extracted_file.relative_to(self.debug_dir)}")
 
     def save_document(self, stage: str, document: str):
         """
@@ -170,7 +189,8 @@ class DebugHelper:
         加载缓存的分析数据（如果存在）
 
         Args:
-            stage: 阶段名称（如 "01_overview", "02_module_01"）
+            stage: 阶段名称（如 "01_overview", "planning/module_name_01_plan"）
+                   支持子目录
 
         Returns:
             缓存的数据，如果不存在或读取失败则返回 None
@@ -178,13 +198,29 @@ class DebugHelper:
         if not self.enabled or not self.debug_dir.exists():
             return None
 
-        # 清理 stage 名称，替换不安全的文件名字符
+        # 处理子目录
         import re
-        safe_stage = re.sub(r'[^\w\-]', '_', stage)
+
+        if '/' in stage:
+            # 分离目录和文件名
+            parts = stage.split('/')
+            sub_dir = '/'.join(parts[:-1])
+            file_stage = parts[-1]
+
+            # 目标目录
+            target_dir = self.debug_dir / sub_dir
+            if not target_dir.exists():
+                return None
+
+            # 清理文件名
+            safe_stage = re.sub(r'[^\w\-]', '_', file_stage)
+        else:
+            target_dir = self.debug_dir
+            safe_stage = re.sub(r'[^\w\-]', '_', stage)
 
         # 查找最新的该阶段的 extracted.json 文件
         pattern = f"*_{safe_stage}_extracted.json"
-        files = sorted(self.debug_dir.glob(pattern), reverse=True)
+        files = sorted(target_dir.glob(pattern), reverse=True)
 
         if not files:
             return None

@@ -111,6 +111,23 @@ class UniversalExtractor:
             'functions': '(function_item name: (identifier) @func_name)',
             'imports': '(use_declaration argument: (scoped_identifier) @import)',
         },
+        'dart': {
+            'functions': '''
+                (function_signature name: (identifier) @func_name)
+                (method_signature name: (identifier) @method_name)
+            ''',
+            'classes': '''
+                (class_definition name: (identifier) @class_name)
+                (mixin_declaration name: (identifier) @mixin_name)
+                (enum_declaration name: (identifier) @enum_name)
+            ''',
+            'imports': '''
+                (import_or_export uri: (configurable_uri (string_literal) @import))
+            ''',
+            'exports': '''
+                (import_or_export uri: (configurable_uri (string_literal) @export))
+            ''',
+        },
     }
 
     def __init__(self, parser):

@@ -77,6 +77,9 @@ class LanguageDetector:
         # Swift
         '.swift': 'swift',
 
+        # Dart/Flutter
+        '.dart': 'dart',
+
         # Objective-C
         '.m': 'objc',
         '.mm': 'objc',
@@ -242,7 +245,7 @@ class LanguageDetector:
             'source': {
                 'python', 'javascript', 'typescript', 'tsx', 'java', 'kotlin',
                 'scala', 'c', 'cpp', 'c_sharp', 'go', 'rust', 'ruby', 'php',
-                'swift', 'objc', 'lua', 'r', 'sql'
+                'swift', 'dart', 'objc', 'lua', 'r', 'sql'
             },
             'config': {'json', 'yaml', 'toml', 'xml', 'ini'},
             'docs': {'markdown', 'rst'},

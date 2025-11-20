@@ -153,6 +153,62 @@ class DocGeneratorAgent:
 
         return product_grouping
 
+    def _extract_module_overview(self, module_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        从新格式的模块数据中提取概览信息
+
+        Args:
+            module_data: 包含main_module和sub_modules的模块数据
+
+        Returns:
+            概览信息 {
+                'business_purpose': str,
+                'core_features': List[str],
+                'external_interactions': List[str]
+            }
+        """
+        # 聚合所有文件分析
+        all_files_analysis = []
+
+        # 从主模块收集
+        main_module = module_data.get('main_module', {})
+        all_files_analysis.extend(main_module.get('files_analysis', []))
+
+        # 从子模块收集
+        sub_modules = module_data.get('sub_modules', {})
+        for sub_module_data in sub_modules.values():
+            all_files_analysis.extend(sub_module_data.get('files_analysis', []))
+
+        # 提取业务目的（取第一个有效的，或聚合多个）
+        business_purposes = []
+        core_features = set()
+        external_interactions = set()
+
+        for file_analysis in all_files_analysis:
+            # 业务目的
+            bp = file_analysis.get('business_purpose', '').strip()
+            if bp and bp not in business_purposes:
+                business_purposes.append(bp)
+
+            # 核心功能
+            features = file_analysis.get('core_features', [])
+            if isinstance(features, list):
+                core_features.update(features)
+
+            # 外部交互
+            interactions = file_analysis.get('external_interactions', [])
+            if isinstance(interactions, list):
+                external_interactions.update(interactions)
+
+        # 合并业务目的（取前3个最重要的）
+        business_purpose = '; '.join(business_purposes[:3]) if business_purposes else '未知业务目的'
+
+        return {
+            'business_purpose': business_purpose,
+            'core_features': list(core_features),
+            'external_interactions': list(external_interactions)
+        }
+
     async def _analyze_product_grouping(
         self,
         modules_analysis: Dict[str, Any]
@@ -169,7 +225,13 @@ class DocGeneratorAgent:
         # 提取模块摘要信息（包括交互关系）
         modules_summary = []
         for module_name, module_data in modules_analysis.items():
-            overview = module_data.get('overview', {})
+            # 跳过失败的模块
+            if module_data.get('status') == 'failed':
+                continue
+
+            # 从新格式中提取概览信息：聚合main_module和sub_modules的文件分析
+            overview = self._extract_module_overview(module_data)
+
             modules_summary.append({
                 'module_name': module_name,
                 'business_purpose': overview.get('business_purpose', ''),
@@ -276,10 +338,16 @@ class DocGeneratorAgent:
         for module_name in all_modules_to_analyze:
             if module_name in modules_analysis:
                 module_data = modules_analysis[module_name]
+
+                # 跳过失败的模块
+                if module_data.get('status') == 'failed':
+                    continue
+
+                # 从新格式中提取数据：main_module + sub_modules
                 aggregated_modules_data.append({
                     'module_name': module_name,
-                    'overview': module_data.get('overview', {}),
-                    'detailed_analysis': module_data.get('detailed_analysis', {})
+                    'main_module': module_data.get('main_module', {}),
+                    'sub_modules': module_data.get('sub_modules', {})
                 })
 
         if not aggregated_modules_data:

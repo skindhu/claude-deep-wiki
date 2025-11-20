@@ -12,127 +12,24 @@ class SemanticPromptBuilder:
     """语义分析提示词构建器"""
 
     @staticmethod
-    def build_overview_prompt(
-        module_name: str,
-        responsibility: str,
-        layer: str,
-        repo_path: str,
-        key_files_info: List[Dict]
-    ) -> str:
-        """
-        构建概览分析提示词
-
-        Args:
-            module_name: 模块名称
-            responsibility: 模块职责
-            layer: 模块层次
-            repo_path: 仓库路径
-            key_files_info: 关键文件信息列表
-
-        Returns:
-            提示词字符串
-        """
-        return f"""你是业务分析专家。请分析这个模块的业务价值和核心功能。
-
-⚠️⚠️⚠️ 【输出格式要求】 ⚠️⚠️⚠️
-
-**你的输出必须严格遵循以下格式：**
-
-✅ 正确格式：
-```json
-{{
-  "module_name": "...",
-  ...
-}}
-```
-
-❌ 禁止：
-- 在JSON代码块前后添加过多解释性文字（简短说明可以接受，但必须简洁）
-- 输出多个JSON代码块
-- JSON格式错误或不完整
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📋 阶段1 任务：模块概览分析
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-**模块信息**:
-- 模块名称: {module_name}
-- 初步职责: {responsibility}
-- 模块层次: {layer}
-- 仓库路径: {repo_path}
-
-**关键文件信息**:
-{json.dumps(key_files_info, ensure_ascii=False, indent=2)}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📝 分析任务
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-1. **理解业务价值**: 这个模块为用户/系统提供什么价值？
-2. **识别核心功能**: 提炼3-5个主要业务功能点
-3. **分析交互关系**: 这个模块与哪些其他模块有交互？
-4. **使用业务语言**: 描述时避免技术术语，面向产品经理和业务人员
-
-⚠️ 重要约束:
-- 基于文件路径、导入导出关系进行推断
-- 不要读取文件内容（留给阶段2）
-- 保持简洁，每个功能描述1-2句话
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📤 输出格式
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-请使用以下格式输出（用```json包裹）：
-
-```json
-{{
-  "module_name": "{module_name}",
-  "business_purpose": "这个模块的业务价值是...",
-  "core_features": [
-    {{
-      "feature_name": "功能名称",
-      "description": "功能描述",
-      "related_files": ["file1.js", "file2.js"]
-    }}
-  ],
-  "external_interactions": [
-    {{
-      "target_module": "目标模块名",
-      "interaction_type": "调用/被调用/数据传递",
-      "description": "交互说明"
-    }}
-  ]
-}}
-```
-
-**重要**：
-- 可以在代码块前简短说明，但保持简洁
-- JSON必须完整有效，确保可被json.loads()解析
-"""
-
-    @staticmethod
     def build_batch_analysis_prompt(
         module_name: str,
-        business_purpose: str,
+        description: str,
         repo_path: str,
-        files_to_analyze: List[Dict],
+        files: List[str],
         batch_idx: int = None,
-        total_batches: int = None,
-        batch_cohesion: float = None,
-        batch_description: str = None
+        total_batches: int = None
     ) -> str:
         """
         构建批次分析提示词
 
         Args:
             module_name: 模块名称
-            business_purpose: 业务价值
+            description: 模块描述/职责
             repo_path: 仓库路径
-            files_to_analyze: 需要分析的文件列表
+            files: 需要分析的文件路径列表
             batch_idx: 当前批次索引（可选）
             total_batches: 总批次数（可选）
-            batch_cohesion: 批次关联度（可选）
-            batch_description: 批次描述（可选）
 
         Returns:
             提示词字符串
@@ -146,8 +43,6 @@ class SemanticPromptBuilder:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 **当前批次**: 第 {batch_idx}/{total_batches} 批
-**批次关联度**: {batch_cohesion}
-**批次描述**: {batch_description}
 
 ⚠️ 重要提示：
 - 这是批量分析的一部分，请保持分析风格的一致性
@@ -184,11 +79,11 @@ class SemanticPromptBuilder:
 
 **模块信息**:
 - 模块名称: {module_name}
-- 业务价值: {business_purpose}
+- 模块职责: {description}
 - 仓库路径: {repo_path}
 
-**本批次需要分析的文件** ({len(files_to_analyze)} 个):
-{json.dumps([f.get('path', '') for f in files_to_analyze], ensure_ascii=False, indent=2)}
+**本批次需要分析的文件** ({len(files)} 个):
+{json.dumps(files, ensure_ascii=False, indent=2)}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📝 深度分析任务（对每个文件）
@@ -196,17 +91,23 @@ class SemanticPromptBuilder:
 
 **对每个文件执行以下深度分析**:
 
-1. **使用 analyze_code_block 工具**:
-   - 读取文件内容
-   - 调用 analyze_code_block 工具获取代码结构
+1. **【可选】使用 analyze_code_block 工具快速了解文件结构**:
+   - 目的：快速获取文件包含哪些函数和类的概览
+   - 限制：工具只提供名称和参数列表，不包含业务逻辑实现
    - 参数: code=文件内容, language=编程语言, context={{module: "{module_name}"}}
 
-2. **深入分析业务逻辑实现**:
+2. **【必需】完整阅读代码文件**:
+   - 使用 read_file 工具读取完整代码内容
+   - 仔细阅读每个函数的详细实现
+   - 追踪数据流和业务逻辑执行路径
+   - **不能只依赖工具输出**，必须理解代码细节
+
+3. **深入分析业务逻辑实现**:
    - **业务目的**: 这个函数解决什么业务问题？为什么需要它？
    - **输入参数**: 每个参数的业务含义、取值范围、业务约束
    - **输出结果**: 返回值的业务含义、对业务流程的影响
    - **详细业务逻辑**:
-     * 完整的业务处理步骤（7-10步，尽可能详细）
+     * 完整的业务处理步骤（尽可能详细，不限制步数）
      * 每一步的业务含义和为什么这样做
      * 关键的业务决策点（if/switch）及决策依据
      * 循环处理的业务场景（为什么需要遍历）
@@ -298,9 +199,10 @@ class SemanticPromptBuilder:
    ```
 
 ⚠️ 重要约束:
-- **必须**使用 analyze_code_block 工具分析每个文件
+- **必须完整阅读代码**，理解详细的业务逻辑实现
 - **基于真实代码**，不得编造函数或功能
-- **工具调用预算**: 最多调用 {len(files_to_analyze)} 次 analyze_code_block
+- **严格遵循代码逻辑**，不推测不确定的内容
+- **使用产品语言表达**，避免技术术语
 - 如果文件过大或分析失败，跳过该文件并记录
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -313,88 +215,44 @@ class SemanticPromptBuilder:
 {{
   "files_analysis": [
     {{
-      "file_path": "相对路径",
-      "language": "编程语言",
-      "functions": [
-        {{
-          "name": "函数名",
-          "business_purpose": "解决什么业务问题，为什么需要这个函数",
-          "input_params": [
-            {{
-              "name": "参数名",
-              "type": "类型",
-              "business_meaning": "业务含义",
-              "constraints": "取值范围和业务约束"
-            }}
-          ],
-          "output": {{
-            "type": "返回值类型",
-            "business_meaning": "返回值的业务含义",
-            "business_impact": "对业务流程的影响"
-          }},
-          "detailed_business_logic": [
-            {{
-              "step": 1,
-              "action": "具体操作",
-              "business_reason": "为什么这样做",
-              "decision_point": "是否包含业务决策（如if判断）",
-              "business_rule": "涉及的业务规则"
-            }}
-          ],
-          "business_rules": ["规则1", "规则2"],
-          "exception_handling": [
-            {{
-              "exception_type": "异常类型",
-              "business_meaning": "业务含义",
-              "handling_strategy": "如何处理",
-              "business_impact": "对用户的影响"
-            }}
-          ],
-          "edge_cases": [
-            {{
-              "scenario": "边界场景",
-              "handling": "如何处理",
-              "business_reason": "为什么"
-            }}
-          ]
-        }}
-      ],
+      "file_path": "...",
+      "business_function": "用产品语言描述：这个文件为用户提供什么功能",
+      "core_logic": "详细描述代码的执行流程和具体逻辑（尽可能详细，不限步数）",
+      "data_flow": "数据从哪里来，如何处理，最后到哪里去",
       "classes": [
         {{
           "name": "类名",
-          "business_purpose": "业务职责",
-          "business_scenario": "应用场景",
-          "state_management": "管理的业务状态",
+          "purpose": "用产品语言描述这个类负责什么功能",
           "key_methods": [
             {{
               "name": "方法名",
-              "business_purpose": "业务用途",
-              "when_to_call": "调用场景",
-              "business_impact": "业务影响"
-            }}
-          ],
-          "business_relationships": [
-            {{
-              "related_class": "关联类",
-              "relationship_type": "关系类型",
-              "business_meaning": "业务意义"
+              "purpose": "这个方法做什么",
+              "business_logic": "详细的业务逻辑步骤"
             }}
           ]
         }}
       ],
-      "business_flow": {{
-        "description": "整体业务流程",
-        "entry_points": ["入口函数"],
-        "key_decision_points": ["决策点"],
-        "data_flow": "数据流转"
-      }},
-      "flow_diagram_mermaid": "sequenceDiagram\\n  ..."
+      "functions": [
+        {{
+          "name": "函数名",
+          "purpose": "用产品语言描述这个函数负责什么功能",
+          "business_logic": "详细的业务逻辑步骤（参考上面processOrder的示例）",
+          "input_params": "参数的业务含义",
+          "output": "返回值的业务含义",
+          "business_rules": ["业务规则1", "业务规则2"],
+          "edge_cases": "边界情况处理"
+        }}
+      ]
     }}
   ]
 }}
 ```
 
-**重要**：
+**输出要求**：
+- 必须分析每个文件，不要遗漏
+- 使用产品语言和业务语言，面向产品经理和用户
+- 严格基于代码逻辑，不推测
+- core_logic 和 business_logic 字段必须尽可能详细，不限制步数（参考上面processOrder示例的详细描述风格）
 - 可以在代码块前简短说明分析思路，但保持简洁
 - 使用```json包裹JSON内容
 - 确保JSON格式完全正确，可被json.loads()解析

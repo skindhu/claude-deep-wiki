@@ -26,6 +26,8 @@ class PolyglotParser:
     """语言无关的代码解析器"""
 
     # Tree-sitter 语言名称映射 (我们的命名 -> tree-sitter 命名)
+    # ⚠️ 注意：tree-sitter-languages 库不支持所有语言
+    # 已验证支持的语言列表 (2024-11)
     LANGUAGE_NAME_MAP = {
         'javascript': 'javascript',
         'typescript': 'typescript',
@@ -39,7 +41,6 @@ class PolyglotParser:
         'c_sharp': 'c_sharp',
         'ruby': 'ruby',
         'php': 'php',
-        'swift': 'swift',
         'kotlin': 'kotlin',
         'scala': 'scala',
         'html': 'html',
@@ -51,6 +52,12 @@ class PolyglotParser:
         'r': 'r',
         'lua': 'lua',
         'objc': 'objc',
+    }
+
+    # 不支持的语言（tree-sitter-languages 库未包含）
+    UNSUPPORTED_LANGUAGES = {
+        'dart': 'Dart 语言暂不支持（tree-sitter-languages 库未包含）',
+        'swift': 'Swift 语言暂不支持（tree-sitter-languages 库未包含）',
     }
 
     def __init__(self):
@@ -80,6 +87,10 @@ class PolyglotParser:
         Raises:
             ValueError: 不支持的语言
         """
+        # 检查是否在不支持列表中
+        if language in self.UNSUPPORTED_LANGUAGES:
+            raise ValueError(self.UNSUPPORTED_LANGUAGES[language])
+
         # 映射语言名称
         ts_language = self.LANGUAGE_NAME_MAP.get(language, language)
 
@@ -93,7 +104,12 @@ class PolyglotParser:
             logger.debug(f"Loaded parser for {ts_language}")
             return parser
         except Exception as e:
-            raise ValueError(f"Unsupported language: {language}") from e
+            # 提供更友好的错误信息
+            supported_langs = ', '.join(sorted(self.LANGUAGE_NAME_MAP.keys()))
+            raise ValueError(
+                f"不支持的语言: {language}。\n"
+                f"支持的语言: {supported_langs}"
+            ) from e
 
     def get_language(self, language: str):
         """
@@ -104,7 +120,14 @@ class PolyglotParser:
 
         Returns:
             Tree-sitter Language 对象
+
+        Raises:
+            ValueError: 不支持的语言
         """
+        # 检查是否在不支持列表中
+        if language in self.UNSUPPORTED_LANGUAGES:
+            raise ValueError(self.UNSUPPORTED_LANGUAGES[language])
+
         ts_language = self.LANGUAGE_NAME_MAP.get(language, language)
 
         if ts_language in self._language_cache:
@@ -115,7 +138,12 @@ class PolyglotParser:
             self._language_cache[ts_language] = lang_obj
             return lang_obj
         except Exception as e:
-            raise ValueError(f"Unsupported language: {language}") from e
+            # 提供更友好的错误信息
+            supported_langs = ', '.join(sorted(self.LANGUAGE_NAME_MAP.keys()))
+            raise ValueError(
+                f"不支持的语言: {language}。\n"
+                f"支持的语言: {supported_langs}"
+            ) from e
 
     def parse_file(self, file_path: str | Path, language: str) -> Optional[Dict[str, Any]]:
         """
@@ -243,10 +271,17 @@ class PolyglotParser:
         Returns:
             是否支持
         """
-        ts_language = self.LANGUAGE_NAME_MAP.get(language, language)
+        # 快速检查：如果在不支持列表中，直接返回 False
+        if language in self.UNSUPPORTED_LANGUAGES:
+            return False
 
+        # 检查是否在支持列表中
+        if language in self.LANGUAGE_NAME_MAP:
+            return True
+
+        # 对于未知语言，尝试获取 parser
         try:
-            self.get_parser(ts_language)
+            self.get_parser(language)
             return True
         except Exception:
             return False

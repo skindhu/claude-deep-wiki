@@ -179,18 +179,26 @@ class PRDPromptBuilder:
         sub_domains = domain_info.get('sub_domains', [])
 
         # 保持模块数据完整（分批生成会处理token限制）
+        # 新格式：main_module + sub_modules
         detailed_modules = []
         for module_data in aggregated_modules_data:
             module_name = module_data.get('module_name', '')
-            overview = module_data.get('overview', {})
-            detailed = module_data.get('detailed_analysis', {})
+
+            # 聚合所有文件分析
+            all_files_analysis = []
+
+            # 从主模块收集
+            main_module = module_data.get('main_module', {})
+            all_files_analysis.extend(main_module.get('files_analysis', []))
+
+            # 从子模块收集
+            sub_modules = module_data.get('sub_modules', {})
+            for sub_name, sub_data in sub_modules.items():
+                all_files_analysis.extend(sub_data.get('files_analysis', []))
 
             detailed_modules.append({
                 'module_name': module_name,
-                'business_purpose': overview.get('business_purpose', ''),
-                'core_features': overview.get('core_features', []),
-                'external_interactions': overview.get('external_interactions', []),
-                'files_analysis': detailed.get('files_analysis', [])  # ✅ 保持完整，不截断
+                'files_analysis': all_files_analysis  # ✅ 聚合后的完整文件分析
             })
 
         modules_json = json.dumps(detailed_modules, ensure_ascii=False, indent=2)
@@ -472,7 +480,25 @@ class PRDPromptBuilder:
                 sub_domains_info += f"   - 定位：{sub.get('sub_domain_description', '')}\n"
                 sub_domains_info += f"   - 包含模块：{', '.join(sub.get('technical_modules', []))}\n"
 
-        modules_json = json.dumps(batch_modules, ensure_ascii=False, indent=2)
+        # 处理新格式：聚合 main_module + sub_modules 的文件分析
+        processed_modules = []
+        for module_data in batch_modules:
+            module_name = module_data.get('module_name', '')
+            all_files_analysis = []
+
+            main_module = module_data.get('main_module', {})
+            all_files_analysis.extend(main_module.get('files_analysis', []))
+
+            sub_modules = module_data.get('sub_modules', {})
+            for sub_data in sub_modules.values():
+                all_files_analysis.extend(sub_data.get('files_analysis', []))
+
+            processed_modules.append({
+                'module_name': module_name,
+                'files_analysis': all_files_analysis
+            })
+
+        modules_json = json.dumps(processed_modules, ensure_ascii=False, indent=2)
 
         prompt = f"""你是一位资深的产品经理，需要为产品功能域编写详细的产品需求文档（PRD）。
 
@@ -481,7 +507,7 @@ class PRDPromptBuilder:
 
 # 分批生成说明
 该功能域共包含 {total_modules} 个技术模块。由于内容较多，将分批生成。
-**本次是第 1 批**，将处理前 {len(batch_modules)} 个模块。
+**本次是第 1 批**，将处理前 {len(processed_modules)} 个模块。
 
 # 要求
 1. 生成完整的PRD框架（包括第1章概述、第3-4章）
@@ -541,7 +567,25 @@ class PRDPromptBuilder:
                 sub_domains_info += f"   - 定位：{sub.get('sub_domain_description', '')}\n"
                 sub_domains_info += f"   - 包含模块：{', '.join(sub.get('technical_modules', []))}\n"
 
-        modules_json = json.dumps(batch_modules, ensure_ascii=False, indent=2)
+        # 处理新格式：聚合 main_module + sub_modules 的文件分析
+        processed_modules = []
+        for module_data in batch_modules:
+            module_name = module_data.get('module_name', '')
+            all_files_analysis = []
+
+            main_module = module_data.get('main_module', {})
+            all_files_analysis.extend(main_module.get('files_analysis', []))
+
+            sub_modules = module_data.get('sub_modules', {})
+            for sub_data in sub_modules.values():
+                all_files_analysis.extend(sub_data.get('files_analysis', []))
+
+            processed_modules.append({
+                'module_name': module_name,
+                'files_analysis': all_files_analysis
+            })
+
+        modules_json = json.dumps(processed_modules, ensure_ascii=False, indent=2)
 
         prompt = f"""你是一位资深的产品经理，正在继续编写产品功能域的PRD文档。
 
